@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Store Audit — On Reaching Store</title>
+<style>
+  :root {
+    --ink:       #1a1a2e;
+    --ink-soft:  #4a4a6a;
+    --surface:   #f7f7fb;
+    --card:      #ffffff;
+    --accent:    #2f52e0;
+    --accent-dk: #1e3ab8;
+    --teal:      #00b4a6;
+    --danger:    #d7263d;
+    --warn-bg:   #fff0f2;
+    --warn-bdr:  #f5a7b2;
+    --ok:        #0b9e6e;
+    --ok-bg:     #edfaf5;
+    --ok-bdr:    #7fd8bc;
+    --muted:     #9b9bb8;
+    --border:    #dcdcea;
+    --radius:    10px;
+    --radius-lg: 16px;
+    --shadow:    0 2px 16px rgba(47,82,224,.08);
+    --font:      'Inter', system-ui, sans-serif;
+    --mono:      'JetBrains Mono', 'Fira Mono', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--font); background: var(--surface); color: var(--ink); min-height: 100vh; }
+
+  /* PIN Gate */
+  #pin-gate { display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:100vh; padding:24px; }
+  .pin-card { background:var(--card); border-radius:var(--radius-lg); box-shadow:var(--shadow); padding:48px 40px; max-width:400px; width:100%; text-align:center; }
+  .pin-logo { width:56px; height:56px; background:var(--accent); border-radius:14px; display:flex; align-items:center; justify-content:center; margin:0 auto 20px; font-size:26px; }
+  .pin-card h1 { font-size:20px; font-weight:700; margin-bottom:6px; }
+  .pin-card p { color:var(--ink-soft); font-size:14px; margin-bottom:28px; }
+  .pin-dots { display:flex; gap:12px; justify-content:center; margin-bottom:28px; }
+  .pin-dot { width:14px; height:14px; border-radius:50%; border:2px solid var(--border); background:transparent; transition:all .2s; }
+  .pin-dot.filled { background:var(--accent); border-color:var(--accent); }
+  .pin-keypad { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:16px; }
+  .pin-key { height:54px; border-radius:10px; border:1.5px solid var(--border); background:var(--card); font-size:18px; font-weight:600; color:var(--ink); cursor:pointer; transition:all .15s; }
+  .pin-key:hover { background:var(--surface); border-color:var(--accent); }
+  .pin-key:active { transform:scale(.95); }
+  .pin-key.del { font-size:14px; color:var(--danger); }
+  #pin-error { color:var(--danger); font-size:13px; min-height:20px; margin-top:8px; }
+
+  /* Form */
+  #form-wrapper { display:none; }
+  .form-header { background:var(--accent); color:#fff; padding:28px 32px 24px; }
+  .form-header-inner { max-width:760px; margin:0 auto; display:flex; align-items:flex-start; gap:16px; }
+  .header-icon { width:44px; height:44px; background:rgba(255,255,255,.18); border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:22px; flex-shrink:0; margin-top:2px; }
+  .form-header h1 { font-size:22px; font-weight:700; letter-spacing:-.3px; }
+  .form-header p { font-size:13px; opacity:.8; margin-top:4px; }
+  .form-body { max-width:760px; margin:32px auto; padding:0 20px 60px; }
+  .progress-bar-wrap { background:#eef0fb; border-radius:99px; height:6px; margin-bottom:28px; overflow:hidden; }
+  .progress-bar-fill { height:100%; background:var(--accent); border-radius:99px; transition:width .3s ease; width:0%; }
+
+  .section { background:var(--card); border-radius:var(--radius-lg); box-shadow:var(--shadow); padding:28px; margin-bottom:20px; }
+  .section-title { font-size:11px; font-weight:700; letter-spacing:1.2px; text-transform:uppercase; color:var(--muted); margin-bottom:20px; padding-bottom:12px; border-bottom:1.5px solid var(--border); }
+
+  .field { margin-bottom:20px; }
+  .field:last-child { margin-bottom:0; }
+  .field-row { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media(max-width:560px){ .field-row { grid-template-columns:1fr; } }
+
+  label { display:block; font-size:13px; font-weight:600; color:var(--ink); margin-bottom:6px; }
+  label .req { color:var(--danger); margin-left:2px; }
+  label .tag { font-size:10px; font-weight:500; background:#eef0fb; color:var(--accent); border-radius:4px; padding:1px 6px; margin-left:6px; letter-spacing:.3px; vertical-align:middle; }
+  label .tag.auto { background:#edfaf5; color:var(--ok); }
+
+  input[type="text"], input[type="email"], input[type="tel"], input[type="time"], select {
+    width:100%; height:42px; border:1.5px solid var(--border); border-radius:var(--radius); padding:0 14px;
+    font-family:var(--font); font-size:14px; color:var(--ink); background:var(--card);
+    transition:border-color .2s,box-shadow .2s; outline:none; appearance:none; -webkit-appearance:none;
+  }
+  input:focus, select:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(47,82,224,.12); }
+  input[readonly] { background:#f0f0f8; color:var(--ink-soft); cursor:not-allowed; }
+  input.autofilled { background:#edfaf5; border-color:var(--ok-bdr); color:var(--ink); }
+  select {
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%234a4a6a' stroke-width='1.8' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat:no-repeat; background-position:right 14px center; padding-right:36px; cursor:pointer;
+  }
+
+  /* Photo upload */
+  .photo-field { border:1.5px dashed var(--border); border-radius:var(--radius); padding:20px; text-align:center; cursor:pointer; transition:all .2s; position:relative; }
+  .photo-field:hover { border-color:var(--accent); background:#f5f6ff; }
+  .photo-field input[type="file"] { position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; }
+  .photo-field .photo-icon { font-size:28px; margin-bottom:6px; }
+  .photo-field p { font-size:13px; color:var(--ink-soft); }
+  .photo-field p strong { color:var(--accent); }
+  .photo-preview { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+  .photo-preview img { width:72px; height:72px; object-fit:cover; border-radius:8px; border:1.5px solid var(--border); }
+
+  /* Upload status */
+  .upload-status { margin-top:10px; }
+  .upload-item { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--ink-soft); padding:6px 0; border-bottom:1px solid var(--border); }
+  .upload-item:last-child { border-bottom:none; }
+  .upload-item .uname { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .upload-item .ustatus { font-weight:600; flex-shrink:0; }
+  .upload-item .ustatus.uploading { color:var(--accent); }
+  .upload-item .ustatus.done { color:var(--ok); }
+  .upload-item .ustatus.err { color:var(--danger); }
+  .upload-item a { color:var(--accent); font-size:11px; text-decoration:none; }
+  .upload-item a:hover { text-decoration:underline; }
+
+  /* Mismatch warning */
+  #mismatch-warning { display:none; background:var(--warn-bg); border:1.5px solid var(--warn-bdr); border-radius:var(--radius); padding:14px 16px; margin-top:12px; align-items:flex-start; gap:10px; }
+  #mismatch-warning p { font-size:13px; color:#a0152b; font-weight:500; line-height:1.5; }
+
+  /* Summary */
+  #summary-section { background:var(--ink); border-radius:var(--radius-lg); padding:28px; margin-bottom:20px; color:#fff; }
+  .summary-title { font-size:11px; font-weight:700; letter-spacing:1.2px; text-transform:uppercase; color:var(--teal); margin-bottom:16px; }
+  #summary-text { font-family:var(--mono); font-size:13px; line-height:1.8; color:#c8d0e8; white-space:pre-wrap; min-height:80px; }
+  .summary-placeholder { color:#4a4e6a; font-style:italic; }
+
+  /* Copy button */
+  #copy-btn { width:100%; height:56px; border-radius:var(--radius-lg); border:none; background:var(--accent); color:#fff; font-family:var(--font); font-size:16px; font-weight:700; cursor:pointer; transition:all .2s; display:flex; align-items:center; justify-content:center; gap:10px; letter-spacing:.2px; }
+  #copy-btn:hover:not(:disabled) { background:var(--accent-dk); transform:translateY(-1px); box-shadow:0 6px 20px rgba(47,82,224,.3); }
+  #copy-btn:disabled { background:#c8cce8; cursor:not-allowed; transform:none; box-shadow:none; }
+  #copy-btn.success { background:var(--ok); }
+  .btn-hint { text-align:center; font-size:12px; color:var(--muted); margin-top:10px; }
+
+  /* Inline upload progress on photo field */
+  .photo-uploading-badge { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:600; color:var(--accent); margin-top:8px; }
+  .photo-uploading-badge .spin { width:14px; height:14px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin .7s linear infinite; flex-shrink:0; }
+
+  /* Thank-you screen (shown after submit) */
+  #thank-you-screen { display:none; flex-direction:column; align-items:center; justify-content:center; min-height:100vh; padding:24px; }
+  .thank-you-card { background:var(--card); border-radius:var(--radius-lg); box-shadow:var(--shadow); padding:48px 40px; max-width:400px; width:100%; text-align:center; }
+  .thank-you-icon { width:64px; height:64px; background:var(--ok-bg); border:2px solid var(--ok-bdr); border-radius:50%; display:flex; align-items:center; justify-content:center; margin:0 auto 20px; font-size:30px; }
+  .thank-you-card h1 { font-size:20px; font-weight:700; margin-bottom:8px; }
+  .thank-you-card p { color:var(--ink-soft); font-size:14px; line-height:1.6; }
+
+  /* Submitting overlay */
+  #submit-overlay { display:none; position:fixed; inset:0; background:rgba(26,26,46,.7); z-index:999; align-items:center; justify-content:center; }
+  #submit-overlay.active { display:flex; }
+  .submit-card { background:var(--card); border-radius:var(--radius-lg); padding:36px 40px; text-align:center; max-width:340px; width:90%; }
+  .submit-spinner { width:48px; height:48px; border:4px solid var(--border); border-top-color:var(--accent); border-radius:50%; margin:0 auto 16px; animation:spin .8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .submit-card h3 { font-size:17px; font-weight:700; margin-bottom:8px; }
+  .submit-card p { font-size:13px; color:var(--ink-soft); line-height:1.5; }
+  #submit-progress-text { margin-top:12px; font-size:12px; color:var(--accent); font-weight:600; }
+</style>
+</head>
+<body>
+
+<div id="pin-gate">
+  <div class="pin-card">
+    <div class="pin-logo">🔐</div>
+    <h1>Store Audit Portal</h1>
+    <p>Enter your 4-digit PIN to access the form</p>
+    <div class="pin-dots">
+      <div class="pin-dot" id="dot-0"></div>
+      <div class="pin-dot" id="dot-1"></div>
+      <div class="pin-dot" id="dot-2"></div>
+      <div class="pin-dot" id="dot-3"></div>
+    </div>
+    <div class="pin-keypad">
+      <button class="pin-key" onclick="pinPress('1')">1</button>
+      <button class="pin-key" onclick="pinPress('2')">2</button>
+      <button class="pin-key" onclick="pinPress('3')">3</button>
+      <button class="pin-key" onclick="pinPress('4')">4</button>
+      <button class="pin-key" onclick="pinPress('5')">5</button>
+      <button class="pin-key" onclick="pinPress('6')">6</button>
+      <button class="pin-key" onclick="pinPress('7')">7</button>
+      <button class="pin-key" onclick="pinPress('8')">8</button>
+      <button class="pin-key" onclick="pinPress('9')">9</button>
+      <button class="pin-key" onclick="pinPress('0')" style="grid-column:2">0</button>
+      <button class="pin-key del" onclick="pinDel()">⌫</button>
+    </div>
+    <div id="pin-error"></div>
+  </div>
+</div>
+
+<div id="submit-overlay">
+  <div class="submit-card">
+    <div class="submit-spinner"></div>
+    <h3>Uploading photos</h3>
+    <p>Please wait while photos are being saved. Don't close this window.</p>
+    <div id="submit-progress-text">Preparing...</div>
+  </div>
+</div>
+
+<div id="thank-you-screen">
+  <div class="thank-you-card">
+    <div class="thank-you-icon">✅</div>
+    <h1>Submitted!</h1>
+    <p>The summary was copied and WhatsApp was opened. You can paste the report into your group now. You may close this tab.</p>
+  </div>
+</div>
+
+<div id="form-wrapper">
+
+  <div class="form-header">
+    <div class="form-header-inner">
+      <div class="header-icon">🏪</div>
+      <div>
+        <h1>Form 1 — On Reaching Store</h1>
+        <p>Fill all fields on arrival. Photos upload automatically to the shared audit Drive folder.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="form-body">
+
+    <div class="progress-bar-wrap">
+      <div class="progress-bar-fill" id="progress-fill"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Team Leader Verification</div>
+      <div class="field-row">
+        <div class="field">
+          <label for="tl-name">Team Leader Name <span class="req">*</span></label>
+          <select id="tl-name" onchange="onLookupChange()">
+            <option value="">— Select Team Leader —</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="tl-phone">Team Leader Phone <span class="req">*</span></label>
+          <input type="tel" id="tl-phone" placeholder="10-digit number" maxlength="10" autocomplete="off" oninput="onLookupChange()">
+        </div>
+      </div>
+      <div id="mismatch-warning">
+        <span style="font-size:20px;">⚠️</span>
+        <p><strong>The phone number you have entered does not match the Team Leader name in our database.</strong> Please recheck — the Copy button is disabled until this is corrected.</p>
+      </div>
+      <div class="field-row" style="margin-top:16px;">
+        <div class="field">
+          <label for="tl-email">Team Leader Email <span class="tag auto">Auto-filled</span></label>
+          <input type="email" id="tl-email" readonly placeholder="Filled on match">
+        </div>
+        <div class="field">
+          <label for="wa-link">WhatsApp Group Link <span class="tag auto">Auto-filled</span></label>
+          <input type="text" id="wa-link" readonly placeholder="Filled on match">
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Store Details</div>
+      <div class="field-row">
+        <div class="field">
+          <label for="store-code">Store Code <span class="req">*</span></label>
+          <input type="text" id="store-code" placeholder="e.g. MUM-042" oninput="updateSummary()">
+        </div>
+        <div class="field">
+          <label for="store-brand">Store Brand Name <span class="req">*</span></label>
+          <select id="store-brand" onchange="updateSummary()">
+            <option value="">— Select brand —</option>
+            <option>Pantaloons</option>
+            <option>FBB</option>
+            <option>Allen Solly</option>
+            <option>Louis Philippe</option>
+            <option>Van Heusen</option>
+            <option>Peter England</option>
+            <option>Planet Fashion</option>
+            <option>Other</option>
+          </select>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="city">City / Location <span class="req">*</span></label>
+          <input type="text" id="city" placeholder="e.g. Mumbai" oninput="updateSummary()">
+        </div>
+        <div class="field">
+          <label for="mall-status">Store is in a Mall? <span class="req">*</span></label>
+          <select id="mall-status" onchange="updateSummary()">
+            <option value="">— Select —</option>
+            <option>HS (High Street)</option>
+            <option>Mall – Authorization Not Taken</option>
+            <option>Mall – Authorization Taken</option>
+          </select>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="store-category">Store Category <span class="req">*</span></label>
+          <select id="store-category" onchange="updateSummary()">
+            <option value="">— Select —</option>
+            <option>A</option>
+            <option>B – Backroom Congested</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="audit-type">Type of Audit <span class="req">*</span></label>
+          <select id="audit-type" onchange="updateSummary()">
+            <option value="">— Select —</option>
+            <option>Surprise</option>
+            <option>Handover</option>
+            <option>Conversion</option>
+            <option>Closure</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Arrival Information</div>
+      <div class="field-row">
+        <div class="field">
+          <label for="reach-time">Store Reaching Time <span class="req">*</span></label>
+          <input type="time" id="reach-time" oninput="updateSummary()">
+        </div>
+        <div class="field">
+          <label for="store-mgr">Store Manager Name <span class="req">*</span></label>
+          <input type="text" id="store-mgr" placeholder="e.g. Priya Mehta" oninput="updateSummary()">
+        </div>
+      </div>
+      <div class="field">
+        <label for="team-photo">Photo of Team on Reaching Store <span class="req">*</span></label>
+        <div class="photo-field">
+          <input type="file" id="team-photo" accept="image/*" multiple onchange="handlePhotoSelect(this,'team-photo-preview','team-photo-status')">
+          <div class="photo-icon">📷</div>
+          <p><strong>Tap to upload</strong> or drag & drop</p>
+          <p style="font-size:11px;margin-top:4px;">Multiple photos allowed · JPG, PNG, HEIC</p>
+          <div class="photo-preview" id="team-photo-preview"></div>
+        </div>
+        <div class="upload-status" id="team-photo-status"></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Store Contact Details</div>
+      <div class="field-row">
+        <div class="field">
+          <label for="store-contact">Store Contact Number <span class="req">*</span></label>
+          <input type="tel" id="store-contact" placeholder="Store phone number" oninput="updateSummary()">
+        </div>
+        <div class="field">
+          <label for="store-email">Store Email <span class="req">*</span></label>
+          <input type="email" id="store-email" placeholder="store@brand.com" oninput="updateSummary()">
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="arm-email">ARM Email <span class="req">*</span></label>
+          <input type="email" id="arm-email" placeholder="arm@brand.com" oninput="updateSummary()">
+        </div>
+        <div class="field">
+          <label for="rm-email">RM Email <span class="req">*</span></label>
+          <input type="email" id="rm-email" placeholder="rm@brand.com" oninput="updateSummary()">
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Backroom</div>
+      <div class="field">
+        <label for="backroom-photo">Photo of Backroom <span class="req">*</span></label>
+        <div class="photo-field">
+          <input type="file" id="backroom-photo" accept="image/*" multiple onchange="handlePhotoSelect(this,'backroom-photo-preview','backroom-photo-status')">
+          <div class="photo-icon">🗄️</div>
+          <p><strong>Tap to upload</strong> or drag & drop</p>
+          <p style="font-size:11px;margin-top:4px;">Multiple photos allowed · JPG, PNG, HEIC</p>
+          <div class="photo-preview" id="backroom-photo-preview"></div>
+        </div>
+        <div class="upload-status" id="backroom-photo-status"></div>
+      </div>
+    </div>
+
+    <div id="summary-section">
+      <div class="summary-title">📋 Live Message Preview</div>
+      <div id="summary-text"><span class="summary-placeholder">Fill in the fields above — your WhatsApp message will appear here...</span></div>
+    </div>
+
+    <button id="copy-btn" disabled onclick="submitForm()">
+      <span id="copy-icon">📋</span>
+      <span id="copy-label">Copy & Open WhatsApp</span>
+    </button>
+    <p class="btn-hint" id="btn-hint">Complete all required fields to enable</p>
+
+  </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════
+   ██  CONFIGURATION — edit these values          
+═══════════════════════════════════════════════ */
+
+const ACCESS_PIN   = "1234";      // ← Change to your PIN
+
+// ── n8n webhooks (replace the old service-account Drive calls) ──
+const PHOTO_UPLOAD_WEBHOOK_URL = "https://n8n.tail61f871.ts.net/webhook/form1-photo-upload"; // receives one file at a time, returns {link, fileId}
+const FORM_SUBMIT_WEBHOOK_URL  = "https://n8n.tail61f871.ts.net/webhook/form1-submit";        // receives the final JSON payload
+
+const FORM2_URL    = "https://formsforaudit.netlify.app/form2_on_store_sealing"; // ← Path/URL to Form 2
+
+// ── TEAM NAMES ────────────────────────────────────────────────────────────────
+// ✏️  Change team names HERE. The dropdown and database both update automatically.
+// Keys must stay as teamA … teamJ (or add more following the same pattern).
+// ─────────────────────────────────────────────────────────────────────────────
+const TEAM_NAMES = {
+  teamA: "Team A",
+  teamB: "Team B",
+  teamC: "Team C",
+  teamD: "Team D",
+  teamE: "Team E",
+  teamF: "Team F",
+  teamG: "Team G",
+  teamH: "Team H",
+  teamI: "Team I",
+  teamJ: "Team J",
+};
+
+// ── TL DATABASE ───────────────────────────────────────────────────────────────
+// Keys here match the keys in TEAM_NAMES exactly (teamA … teamJ).
+// ─────────────────────────────────────────────────────────────────────────────
+const TL_DATABASE = {
+  teamA: { phone:"9876543210", email:"ravi.sharma@audit.com",  waLink:"https://chat.whatsapp.com/BcdmsGxBhma3F0OHqjTlt4" },
+  teamB: { phone:"9123456780", email:"priya.mehta@audit.com",  waLink:"https://chat.whatsapp.com/JOJpmE6BN5FLFoEWb4vMOR" },
+  teamC: { phone:"9812345670", email:"amit.verma@audit.com",   waLink:"https://chat.whatsapp.com/BcdmsGxBhma3F0OHqjTlt4" },
+  teamD: { phone:"9765432100", email:"sunita.rao@audit.com",   waLink:"https://chat.whatsapp.com/JOJpmE6BN5FLFoEWb4vMOR" },
+  teamE: { phone:"9654321000", email:"rahul.gupta@audit.com",  waLink:"https://chat.whatsapp.com/BcdmsGxBhma3F0OHqjTlt4" },
+  teamF: { phone:"9543210900", email:"neha.singh@audit.com",   waLink:"https://chat.whatsapp.com/JOJpmE6BN5FLFoEWb4vMOR" },
+  teamG: { phone:"9432109800", email:"vikram.patel@audit.com", waLink:"https://chat.whatsapp.com/BcdmsGxBhma3F0OHqjTlt4" },
+  teamH: { phone:"9321098700", email:"ananya.iyer@audit.com",  waLink:"https://chat.whatsapp.com/JOJpmE6BN5FLFoEWb4vMOR" },
+  teamI: { phone:"9210987600", email:"deepak.joshi@audit.com", waLink:"https://chat.whatsapp.com/BcdmsGxBhma3F0OHqjTlt4" },
+  teamJ: { phone:"9109876500", email:"kavita.bose@audit.com",  waLink:"https://chat.whatsapp.com/JOJpmE6BN5FLFoEWb4vMOR" },
+};
+
+/* ═══════════════════════════════════════════════
+   POPULATE DROPDOWN FROM TEAM_NAMES
+   (runs once on load — no HTML edits needed)
+═══════════════════════════════════════════════ */
+(function populateTLDropdown(){
+  const sel = document.getElementById("tl-name");
+  Object.entries(TEAM_NAMES).forEach(([key, label]) => {
+    const opt = document.createElement("option");
+    opt.value = key;        // e.g. "teamA"  — used for DB lookup
+    opt.textContent = label; // e.g. "Team A" — what the user sees
+    sel.appendChild(opt);
+  });
+})();
+
+/* ═══════════════════════════════════════════════
+   STATE
+═══════════════════════════════════════════════ */
+let tlMatchConfirmed = false;
+
+// Stores uploaded file links per field: { fieldId: [ {name, link}, ... ] }
+let uploadedLinks    = { "team-photo": [], "backroom-photo": [] };
+
+/* ═══════════════════════════════════════════════
+   PIN
+═══════════════════════════════════════════════ */
+let pinBuffer = "";
+function pinPress(d){ if(pinBuffer.length>=4)return; pinBuffer+=d; updateDots(); if(pinBuffer.length===4)checkPin(); }
+function pinDel(){ pinBuffer=pinBuffer.slice(0,-1); updateDots(); document.getElementById("pin-error").textContent=""; }
+function updateDots(){ for(let i=0;i<4;i++) document.getElementById(`dot-${i}`).classList.toggle("filled",i<pinBuffer.length); }
+function checkPin(){
+  if(pinBuffer===ACCESS_PIN){
+    document.getElementById("pin-gate").style.display="none";
+    document.getElementById("form-wrapper").style.display="block";
+  } else {
+    document.getElementById("pin-error").textContent="Incorrect PIN. Try again.";
+    setTimeout(()=>{ pinBuffer=""; updateDots(); },600);
+  }
+}
+document.addEventListener("keydown",(e)=>{
+  if(!document.getElementById("pin-gate").offsetParent)return;
+  if(e.key>="0"&&e.key<="9") pinPress(e.key);
+  if(e.key==="Backspace") pinDel();
+});
+
+// No-op: kept for backward compat in case any call sites reference it
+function parseTokenFromHash(){}
+
+/* ═══════════════════════════════════════════════
+   FINANCIAL YEAR & FOLDER HELPERS
+═══════════════════════════════════════════════ */
+function getFinancialYear(date){
+  const m = date.getMonth(); // 0=Jan
+  const y = date.getFullYear();
+  if(m >= 3){ // April or later → FY starts this year
+    return `${y}-${String(y+1).slice(-2)}`;
+  } else {    // Jan–Mar → FY started previous year
+    return `${y-1}-${String(y).slice(-2)}`;
+  }
+}
+
+function getMonthName(date){
+  return date.toLocaleDateString("en-IN",{month:"long"});
+}
+
+function sanitizeName(str){
+  // PascalCase, strip spaces/special chars
+  return str.trim().split(/\s+/).map(w=>w.charAt(0).toUpperCase()+w.slice(1).toLowerCase()).join("");
+}
+
+function formatDate(date){
+  return date.toLocaleDateString("en-IN",{day:"2-digit",month:"long",year:"numeric"}).replace(/ /g,"");
+  // e.g. "16June2026"
+}
+
+function buildFileName(fieldLabel, index, ext, date){
+  const tlName    = sanitizeName(document.getElementById("tl-name").value);
+  const storeCode = document.getElementById("store-code").value.trim().replace(/[^a-zA-Z0-9]/g,"");
+  const dateStr   = formatDate(date);
+  const suffix    = index > 0 ? `_${index+1}` : "";
+  return `${tlName}_${dateStr}_${storeCode}_${fieldLabel}${suffix}.${ext}`;
+}
+
+
+async function uploadFileToDrive(file, fileName, meta){
+  const form = new FormData();
+  form.append("file", file, fileName);
+  form.append("fileName", fileName);
+  form.append("fieldId", meta.fieldId);
+  form.append("teamLeaderName", meta.tlName);
+  form.append("storeCode", meta.storeCode);
+  form.append("financialYear", meta.fy);
+  form.append("month", meta.month);
+
+  const res = await fetch(PHOTO_UPLOAD_WEBHOOK_URL, { method:"POST", body:form });
+  if(!res.ok){ const err = await res.text(); throw new Error(`Upload failed: ${res.status} ${err}`); }
+  const data = await res.json(); // n8n's "Respond to Webhook" node should return { link, fileId }
+  return { id:data.fileId, name:fileName, link:data.link };
+}
+
+function buildUploadMeta(fieldId, date){
+  return {
+    fieldId,
+    tlName:     document.getElementById("tl-name").value.trim(),
+    storeCode:  document.getElementById("store-code").value.trim(),
+    fy:         getFinancialYear(date),
+    month:      getMonthName(date)
+  };
+}
+
+/* ═══════════════════════════════════════════════
+   PHOTO FIELD — instant upload on select
+═══════════════════════════════════════════════ */
+async function handlePhotoSelect(input, previewId, statusId){
+  const fieldId = input.id;
+  const files   = Array.from(input.files||[]);
+
+  // Show previews immediately
+  const preview = document.getElementById(previewId);
+  preview.innerHTML="";
+  files.forEach(file=>{
+    const img=document.createElement("img");
+    img.src=URL.createObjectURL(file);
+    preview.appendChild(img);
+  });
+
+  // Reset state for this field
+  uploadedLinks[fieldId]=[];
+  document.getElementById(statusId).innerHTML="";
+
+  if(files.length===0){ updateCopyBtn(); updateSummary(); return; }
+  
+  const PHOTO_LABEL = {
+    "team-photo":     "Photo_of_Team_on_Reaching_Store",
+    "backroom-photo": "Photo_of_Backroom",
+  };
+  const label = PHOTO_LABEL[fieldId] || fieldId;
+
+  // Build status list showing "uploading" for all files first
+  const statusItems = files.map(f=>({name:f.name,status:"uploading",link:null}));
+  renderUploadStatus(statusId, statusItems);
+
+  const now = new Date();
+  for(let i=0;i<files.length;i++){
+    const file  = files[i];
+    const ext   = file.name.split(".").pop() || "jpg";
+    const fname = buildFileName(label, i, ext, now);
+    try{
+      const uploaded = await uploadFileToDrive(file, fname, buildUploadMeta(fieldId, now));
+      uploadedLinks[fieldId].push({ name:fname, link:uploaded.link });
+      statusItems[i]={ name:fname, status:"done", link:uploaded.link };
+    } catch(e){
+      statusItems[i]={ name:fname, status:"err", link:null };
+      console.error("Instant upload error:", e);
+    }
+    renderUploadStatus(statusId, statusItems);
+    updateSummary(); // refresh links in preview as each one finishes
+  }
+
+  updateCopyBtn();
+  updateSummary();
+}
+
+/* ═══════════════════════════════════════════════
+   TL LOOKUP
+═══════════════════════════════════════════════ */
+function onLookupChange(){
+  const teamKey  = document.getElementById("tl-name").value;   // e.g. "teamA"
+  const phone    = document.getElementById("tl-phone").value.trim();
+  const emailFld = document.getElementById("tl-email");
+  const waFld    = document.getElementById("wa-link");
+  const warn     = document.getElementById("mismatch-warning");
+  const rec      = TL_DATABASE[teamKey];
+
+  // If no team selected yet, or phone not entered — clear and wait
+  if(!teamKey || !phone){ clearAutoFill(emailFld,waFld); warn.style.display="none"; tlMatchConfirmed=false; updateSummary(); updateCopyBtn(); return; }
+
+  if(rec && rec.phone===phone){
+    // ✅ Team + phone match — auto-fill email & WhatsApp link
+    emailFld.value=rec.email; emailFld.classList.add("autofilled");
+    waFld.value=rec.waLink;   waFld.classList.add("autofilled");
+    warn.style.display="none"; tlMatchConfirmed=true;
+  } else {
+    // ❌ Team found in DB but phone doesn't match
+    clearAutoFill(emailFld,waFld);
+    warn.style.display=(teamKey in TL_DATABASE)?"flex":"none";
+    tlMatchConfirmed=false;
+  }
+  updateSummary(); updateCopyBtn();
+}
+
+function clearAutoFill(e,w){ e.value=""; e.classList.remove("autofilled"); w.value=""; w.classList.remove("autofilled"); }
+
+/* ═══════════════════════════════════════════════
+   REQUIRED FIELDS & PROGRESS
+═══════════════════════════════════════════════ */
+const REQUIRED_IDS = [
+  "tl-name","tl-phone",
+  "store-code","store-brand","city","mall-status","store-category","audit-type",
+  "reach-time","store-mgr",
+  "store-contact","store-email","arm-email","rm-email",
+  "team-photo","backroom-photo"
+];
+
+function fieldFilled(id){
+  const el=document.getElementById(id);
+  if(el.type==="file") {
+    // Ensure files are picked AND the backend responses have arrived/saved completely
+    return el.files && el.files.length > 0 && uploadedLinks[id] && uploadedLinks[id].length === el.files.length;
+  }
+  return el.value.trim()!=="";
+}
+function allRequiredFilled(){ return REQUIRED_IDS.every(fieldFilled); }
+function filledCount(){ return REQUIRED_IDS.filter(fieldFilled).length; }
+
+function updateCopyBtn(){
+  const btn  = document.getElementById("copy-btn");
+  const hint = document.getElementById("btn-hint");
+  const ready = tlMatchConfirmed && allRequiredFilled();
+  btn.disabled=!ready;
+
+  if(!tlMatchConfirmed && document.getElementById("tl-name").value && document.getElementById("tl-phone").value){
+    hint.textContent="Fix the name/phone mismatch to enable";
+  } else if(!allRequiredFilled()){
+    const rem=REQUIRED_IDS.length-filledCount();
+    hint.textContent=`${rem} required field${rem!==1?"s":""} remaining or photos uploading`;
+  } else {
+    hint.textContent="All good — tap to copy & open WhatsApp";
+  }
+
+  const pct=(filledCount()/REQUIRED_IDS.length)*100;
+  document.getElementById("progress-fill").style.width=pct+"%";
+}
+
+/* ═══════════════════════════════════════════════
+   LIVE SUMMARY
+═══════════════════════════════════════════════ */
+function fv(id){
+  const el=document.getElementById(id);
+  if(!el) return "—";
+  if(el.type==="file") return el.files.length>0?`${el.files.length} photo(s) selected`:"—";
+  return el.value.trim()||"—";
+}
+
+function buildSummary(photoLinksMap){
+  const now  = new Date();
+  const date = now.toLocaleDateString("en-IN",{day:"2-digit",month:"long",year:"numeric"});
+
+  // Build photo link lines
+  function photoLines(fieldId, label){
+    const links = photoLinksMap && photoLinksMap[fieldId];
+    if(!links || links.length===0){
+      const count=document.getElementById(fieldId)?.files?.length||0;
+      return label+": "+(count>0?`${count} photo(s) — will upload on submit`:"—");
+    }
+    const lines=[label+":"];
+    links.forEach((f,i)=>{ lines.push(`  ${i+1}. ${f.name}\n     ${f.link}`); });
+    return lines.join("\n");
+  }
+
+  return [
+    `📋 *STORE AUDIT REPORT – ON REACHING STORE*`,
+    `🗓️ Date: ${date}`,
+    ``,
+    `🏪 *STORE INFORMATION*`,
+    `Store Code    : ${fv("store-code")}`,
+    `Brand         : ${fv("store-brand")}`,
+    `City          : ${fv("city")}`,
+    `Category      : ${fv("store-category")}`,
+    `Mall Status   : ${fv("mall-status")}`,
+    `Audit Type    : ${fv("audit-type")}`,
+    ``,
+    `👥 *TEAM DETAILS*`,
+    `Team Leader   : ${fv("tl-name")}`,
+    `TL Phone      : ${fv("tl-phone")}`,
+    `TL Email      : ${fv("tl-email")}`,
+    ``,
+    `🕐 *ARRIVAL*`,
+    `Reaching Time : ${fv("reach-time")}`,
+    `Store Manager : ${fv("store-mgr")}`,
+    ``,
+    `📞 *STORE CONTACTS*`,
+    `Store Phone   : ${fv("store-contact")}`,
+    `Store Email   : ${fv("store-email")}`,
+    `ARM Email     : ${fv("arm-email")}`,
+    `RM Email      : ${fv("rm-email")}`,
+    ``,
+    `📸 *PHOTOS*`,
+    photoLines("team-photo","Team Photo"),
+    photoLines("backroom-photo","Backroom Photo"),
+    ``,
+    `📝 *NEXT STEP*`,
+    `Form 2 (Store Sealing): ${FORM2_URL}`,
+  ].join("\n");
+}
+
+function updateSummary(){
+  const el=document.getElementById("summary-text");
+  el.textContent=buildSummary(uploadedLinks);
+  updateCopyBtn();
+}
+
+/* ═══════════════════════════════════════════════
+   UPLOAD STATUS UI helper
+═══════════════════════════════════════════════ */
+function renderUploadStatus(statusId, items){
+  const el=document.getElementById(statusId);
+  el.innerHTML=items.map(item=>`
+    <div class="upload-item">
+      <span class="uname">${item.name}</span>
+      <span class="ustatus ${item.status}">${item.status==="uploading"?"Uploading…":item.status==="done"?"✅ Saved":"❌ Failed"}</span>
+      ${item.link?`<a href="${item.link}" target="_blank">View</a>`:""}
+    </div>`).join("");
+}
+
+/* ═══════════════════════════════════════════════
+   SUBMIT
+   Photos are already uploaded in handlePhotoSelect.
+   On submit: (1) copy summary, (2) open WhatsApp,
+   (3) retry any failed/pending uploads in background,
+   (4) fire webhook.
+═══════════════════════════════════════════════ */
+async function submitForm(){
+  const btn=document.getElementById("copy-btn");
+  if(btn.disabled) return;
+
+  // ── STEP 1: Build & copy the summary text FIRST (synchronous) ──
+  // Do this before any async work so the clipboard write can also
+  // happen in the same user-gesture tick on most browsers.
+  const summaryText = buildSummary(uploadedLinks);
+  try{ await navigator.clipboard.writeText(summaryText); }
+  catch(e){
+    const ta=document.createElement("textarea");
+    ta.value=summaryText; document.body.appendChild(ta); ta.select();
+    document.execCommand("copy"); document.body.removeChild(ta);
+  }
+
+  // ── STEP 2: Open WhatsApp immediately after copy ──
+  // Must happen before any await to stay within the user-gesture window.
+  const waLink = document.getElementById("wa-link").value.trim();
+  if(waLink && waLink.startsWith("https://")){
+    window.open(waLink, "_blank");
+  }
+
+  // ── Button feedback right away ──
+  btn.classList.add("success");
+  document.getElementById("copy-icon").textContent="✅";
+  document.getElementById("copy-label").textContent="Copied! WhatsApp opened ✓";
+  setTimeout(()=>{
+    btn.classList.remove("success");
+    document.getElementById("copy-icon").textContent="📋";
+    document.getElementById("copy-label").textContent="Copy & Open WhatsApp";
+  }, 5000);
+
+  // ── Close the form: hide it and show the thank-you screen ──
+  // (Background upload retries / webhook below still continue to run.)
+  document.getElementById("form-wrapper").style.display="none";
+  document.getElementById("thank-you-screen").style.display="flex";
+
+  // ── STEP 3: Retry any photos that weren't uploaded yet (background) ──
+  // This handles the edge case where Drive auth happened AFTER file selection,
+  // or where individual uploads previously failed.
+  const PHOTO_FIELDS = [
+    { id:"team-photo",     label:"Photo_of_Team_on_Reaching_Store", statusId:"team-photo-status"     },
+    { id:"backroom-photo", label:"Photo_of_Backroom",               statusId:"backroom-photo-status" },
+  ];
+
+  const now = new Date();
+  let pendingFields = PHOTO_FIELDS.filter(f => {
+    const el = document.getElementById(f.id);          // ← fix: get element by id
+    const alreadyUploaded = (uploadedLinks[f.id]||[]).length;
+    const totalFiles = (el.files||[]).length;           // ← fix: use `el` not `input`
+    return totalFiles > 0 && alreadyUploaded < totalFiles;
+  });
+
+  if(pendingFields.length > 0){
+    const overlay=document.getElementById("submit-overlay");
+    const progressText=document.getElementById("submit-progress-text");
+    overlay.classList.add("active");
+
+      for(const field of pendingFields){
+        const input  = document.getElementById(field.id);
+        const files  = Array.from(input.files||[]);
+        const alreadyCount = (uploadedLinks[field.id]||[]).length;
+        uploadedLinks[field.id] = uploadedLinks[field.id] || [];
+
+        // Build status list preserving already-done items
+        const statusItems = files.map((f,i)=>{
+          if(i < alreadyCount){
+            return uploadedLinks[field.id][i]
+              ? { name:uploadedLinks[field.id][i].name, status:"done", link:uploadedLinks[field.id][i].link }
+              : { name:f.name, status:"uploading", link:null };
+          }
+          return { name:f.name, status:"uploading", link:null };
+        });
+        renderUploadStatus(field.statusId, statusItems);
+
+        for(let i=alreadyCount;i<files.length;i++){
+          const file  = files[i];
+          const ext   = file.name.split(".").pop()||"jpg";
+          const fname = buildFileName(field.label, i, ext, now);
+          progressText.textContent=`Uploading ${field.label.replace(/_/g," ")} (${i+1}/${files.length})…`;
+          try{
+            const uploaded = await uploadFileToDrive(file, fname, buildUploadMeta(field.id, now));
+            uploadedLinks[field.id].push({ name:fname, link:uploaded.link });
+            statusItems[i]={ name:fname, status:"done", link:uploaded.link };
+          } catch(e){
+            statusItems[i]={ name:fname, status:"err", link:null };
+            console.error("Retry upload error:", e);
+          }
+          renderUploadStatus(field.statusId, statusItems);
+        }
+      }
+    overlay.classList.remove("active");
+    updateSummary();
+  }
+
+  // ── STEP 4: Fire n8n webhook (non-blocking) ──
+  const finalSummary = buildSummary(uploadedLinks);
+  const payload={
+    timestamp:       now.toISOString(),
+    teamLeaderName:  document.getElementById("tl-name").value.trim(),
+    teamLeaderPhone: document.getElementById("tl-phone").value.trim(),
+    teamLeaderEmail: document.getElementById("tl-email").value.trim(),
+    whatsappGroup:   document.getElementById("wa-link").value.trim(),
+    storeCode:       document.getElementById("store-code").value.trim(),
+    storeBrand:      document.getElementById("store-brand").value.trim(),
+    city:            document.getElementById("city").value.trim(),
+    mallStatus:      document.getElementById("mall-status").value.trim(),
+    storeCategory:   document.getElementById("store-category").value.trim(),
+    auditType:       document.getElementById("audit-type").value.trim(),
+    reachingTime:    document.getElementById("reach-time").value.trim(),
+    storeManager:    document.getElementById("store-mgr").value.trim(),
+    storeContact:    document.getElementById("store-contact").value.trim(),
+    storeEmail:      document.getElementById("store-email").value.trim(),
+    armEmail:        document.getElementById("arm-email").value.trim(),
+    rmEmail:         document.getElementById("rm-email").value.trim(),
+    photoLinks:      uploadedLinks,
+    summaryText:     finalSummary,
+    formType:        "Form1_OnReachingStore"
+  };
+  fetch(FORM_SUBMIT_WEBHOOK_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}).catch(()=>{});
+}
+
+/* ═══════════════════════════════════════════════
+   INIT
+═══════════════════════════════════════════════ */
+REQUIRED_IDS.forEach(id=>{
+  const el=document.getElementById(id);
+  if(!el||el.type==="file") return;
+  el.addEventListener("input",updateCopyBtn);
+  el.addEventListener("change",updateCopyBtn);
+});
+
+parseTokenFromHash();  // no-op, kept for safety
+updateSummary();
+</script>
+</body>
+</html>
